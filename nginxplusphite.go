@@ -121,30 +121,30 @@ func work(c *statsd.StatsdClient) {
 	}
 
 	// Send stats to statsd
-	c.Total("connections.accepted", int64(data.Connections.Accepted))
+	c.Gauge("connections.accepted", int64(data.Connections.Accepted))
 	c.Gauge("connections.active", int64(data.Connections.Active))
-	c.Total("connections.dropped", int64(data.Connections.Dropped))
+	c.Gauge("connections.dropped", int64(data.Connections.Dropped))
 	c.Gauge("connections.idle", int64(data.Connections.Idle))
-	c.Total("requests.total", int64(data.Requests.Total))
+	c.Gauge("requests.total", int64(data.Requests.Total))
 	c.Gauge("requests.current", int64(data.Requests.Current))
 
 	for v := range data.Upstreams.CacheServers {
 		sPath := fmt.Sprintf("upstreams.cache_servers.%d.", v)
 		c.Gauge(sPath+"active", int64(data.Upstreams.CacheServers[v].Active))
-		c.Total(sPath+"requests", int64(data.Upstreams.CacheServers[v].Requests))
-		c.Total(sPath+"fails", int64(data.Upstreams.CacheServers[v].Fails))
-		c.Total(sPath+"unavail", int64(data.Upstreams.CacheServers[v].Unavail))
+		c.Gauge(sPath+"requests", int64(data.Upstreams.CacheServers[v].Requests))
+		c.Gauge(sPath+"fails", int64(data.Upstreams.CacheServers[v].Fails))
+		c.Gauge(sPath+"unavail", int64(data.Upstreams.CacheServers[v].Unavail))
 		c.Gauge(sPath+"sent", int64(data.Upstreams.CacheServers[v].Sent))
 		c.Gauge(sPath+"received", int64(data.Upstreams.CacheServers[v].Sent))
 
-		c.Total(sPath+"responses.1xx", int64(data.Upstreams.CacheServers[v].Responses.OneH))
-		c.Total(sPath+"responses.2xx", int64(data.Upstreams.CacheServers[v].Responses.TwoH))
-		c.Total(sPath+"responses.3xx", int64(data.Upstreams.CacheServers[v].Responses.ThreeH))
-		c.Total(sPath+"responses.4xx", int64(data.Upstreams.CacheServers[v].Responses.FourH))
-		c.Total(sPath+"responses.5xx", int64(data.Upstreams.CacheServers[v].Responses.FiveH))
-		c.Total(sPath+"responses.total", int64(data.Upstreams.CacheServers[v].Responses.Total))
+		c.Gauge(sPath+"responses.1xx", int64(data.Upstreams.CacheServers[v].Responses.OneH))
+		c.Gauge(sPath+"responses.2xx", int64(data.Upstreams.CacheServers[v].Responses.TwoH))
+		c.Gauge(sPath+"responses.3xx", int64(data.Upstreams.CacheServers[v].Responses.ThreeH))
+		c.Gauge(sPath+"responses.4xx", int64(data.Upstreams.CacheServers[v].Responses.FourH))
+		c.Gauge(sPath+"responses.5xx", int64(data.Upstreams.CacheServers[v].Responses.FiveH))
+		c.Gauge(sPath+"responses.total", int64(data.Upstreams.CacheServers[v].Responses.Total))
 
-		c.Total(sPath+"health_checks.fails", int64(data.Upstreams.CacheServers[v].HealthChecks.Fails))
-		c.Total(sPath+"health_checks.unhealthy", int64(data.Upstreams.CacheServers[v].HealthChecks.Unhealthy))
+		c.Gauge(sPath+"health_checks.fails", int64(data.Upstreams.CacheServers[v].HealthChecks.Fails))
+		c.Gauge(sPath+"health_checks.unhealthy", int64(data.Upstreams.CacheServers[v].HealthChecks.Unhealthy))
 	}
 }
