@@ -4,65 +4,81 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/quipo/statsd"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/quipo/statsd"
 )
 
+// NginxStats is a Json parsing struct to match nginx status
 type NginxStats struct {
-	Address     string   `json:"address"`
-	Caches      struct{} `json:"caches"`
+	Version       int    `json:"version"`
+	NginxVersion  string `json:"nginx_version"`
+	Address       string `json:"address"`
+	Generation    int    `json:"generation"`
+	LoadTimestamp int64  `json:"load_timestamp"`
+	Timestamp     int64  `json:"timestamp"`
+	Pid           int    `json:"pid"`
+	Processes     struct {
+		Respawned int `json:"respawned"`
+	} `json:"processes"`
 	Connections struct {
-		Accepted float64 `json:"accepted"`
-		Active   float64 `json:"active"`
-		Dropped  float64 `json:"dropped"`
-		Idle     float64 `json:"idle"`
+		Accepted int `json:"accepted"`
+		Dropped  int `json:"dropped"`
+		Active   int `json:"active"`
+		Idle     int `json:"idle"`
 	} `json:"connections"`
-	LoadTimestamp float64 `json:"load_timestamp"`
-	NginxVersion  string  `json:"nginx_version"`
-	Requests      struct {
-		Current float64 `json:"current"`
-		Total   float64 `json:"total"`
+	Ssl struct {
+		Handshakes       int `json:"handshakes"`
+		HandshakesFailed int `json:"handshakes_failed"`
+		SessionReuses    int `json:"session_reuses"`
+	} `json:"ssl"`
+	Requests struct {
+		Total   int `json:"total"`
+		Current int `json:"current"`
 	} `json:"requests"`
-	ServerZones struct{} `json:"server_zones"`
-	Timestamp   float64  `json:"timestamp"`
-	Upstreams   struct {
-		CacheServers []struct {
-			Active       float64 `json:"active"`
-			Backup       bool    `json:"backup"`
-			Downstart    float64 `json:"downstart"`
-			Downtime     float64 `json:"downtime"`
-			Fails        float64 `json:"fails"`
-			HealthChecks struct {
-				Checks     float64 `json:"checks"`
-				Fails      float64 `json:"fails"`
-				LastPassed bool    `json:"last_passed"`
-				Unhealthy  float64 `json:"unhealthy"`
-			} `json:"health_checks"`
-			ID        float64 `json:"id"`
-			Keepalive float64 `json:"keepalive"`
-			Received  float64 `json:"received"`
-			Requests  float64 `json:"requests"`
-			Responses struct {
-				OneH   float64 `json:"1xx"`
-				TwoH   float64 `json:"2xx"`
-				ThreeH float64 `json:"3xx"`
-				FourH  float64 `json:"4xx"`
-				FiveH  float64 `json:"5xx"`
-				Total  float64 `json:"total"`
-			} `json:"responses"`
-			Selected float64 `json:"selected"`
-			Sent     float64 `json:"sent"`
-			Server   string  `json:"server"`
-			State    string  `json:"state"`
-			Unavail  float64 `json:"unavail"`
-			Weight   float64 `json:"weight"`
+	ServerZones struct {
+	} `json:"server_zones"`
+	Upstreams struct {
+		CacheServers struct {
+			Peers []struct {
+				ID        int    `json:"id"`
+				Server    string `json:"server"`
+				Backup    bool   `json:"backup"`
+				Weight    int    `json:"weight"`
+				State     string `json:"state"`
+				Active    int    `json:"active"`
+				Requests  int    `json:"requests"`
+				Responses struct {
+					OneXx   int `json:"1xx"`
+					TwoXx   int `json:"2xx"`
+					ThreeXx int `json:"3xx"`
+					FourXx  int `json:"4xx"`
+					FiveXx  int `json:"5xx"`
+					Total   int `json:"total"`
+				} `json:"responses"`
+				Sent         int   `json:"sent"`
+				Received     int64 `json:"received"`
+				Fails        int   `json:"fails"`
+				Unavail      int   `json:"unavail"`
+				HealthChecks struct {
+					Checks     int  `json:"checks"`
+					Fails      int  `json:"fails"`
+					Unhealthy  int  `json:"unhealthy"`
+					LastPassed bool `json:"last_passed"`
+				} `json:"health_checks"`
+				Downtime  int   `json:"downtime"`
+				Downstart int   `json:"downstart"`
+				Selected  int64 `json:"selected"`
+			} `json:"peers"`
+			Keepalive int `json:"keepalive"`
 		} `json:"cache_servers"`
 	} `json:"upstreams"`
-	Version float64 `json:"version"`
+	Caches struct {
+	} `json:"caches"`
 }
 
 var (
@@ -71,6 +87,7 @@ var (
 	metricPath string
 	interval   int
 	url        string
+	version    int
 )
 
 func init() {
@@ -79,6 +96,7 @@ func init() {
 	flag.StringVar(&metricPath, "m", "nginx.stats", "Metric path")
 	flag.IntVar(&interval, "i", 10, "Check stats each <i> seconds")
 	flag.StringVar(&url, "u", "http://localhost/status", "Nginx plus status URL")
+	flag.IntVar(&version, "v", 5, "NGinx JSON version")
 }
 
 func main() {
@@ -103,16 +121,23 @@ func main() {
 }
 
 func work(c *statsd.StatsdClient) {
-	c.CreateSocket()
+	err := c.CreateSocket()
+	if err != nil {
+		log.Fatal("Error creatig socket")
+	}
+
 	defer c.Close()
 
 	// Read results from status URL
 	resp, err := http.Get(url)
+	defer resp.Body.Close()
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	var data NginxStats
 	err = json.Unmarshal(body, &data)
@@ -121,30 +146,30 @@ func work(c *statsd.StatsdClient) {
 	}
 
 	// Send stats to statsd
-	c.Gauge("connections.accepted", int64(data.Connections.Accepted))
-	c.Gauge("connections.active", int64(data.Connections.Active))
-	c.Gauge("connections.dropped", int64(data.Connections.Dropped))
-	c.Gauge("connections.idle", int64(data.Connections.Idle))
-	c.Gauge("requests.total", int64(data.Requests.Total))
-	c.Gauge("requests.current", int64(data.Requests.Current))
+	_ = c.Gauge("connections.accepted", int64(data.Connections.Accepted))
+	_ = c.Gauge("connections.active", int64(data.Connections.Active))
+	_ = c.Gauge("connections.dropped", int64(data.Connections.Dropped))
+	_ = c.Gauge("connections.idle", int64(data.Connections.Idle))
+	_ = c.Gauge("requests.total", int64(data.Requests.Total))
+	_ = c.Gauge("requests.current", int64(data.Requests.Current))
 
-	for v := range data.Upstreams.CacheServers {
+	for v := range data.Upstreams.CacheServers.Peers {
 		sPath := fmt.Sprintf("upstreams.cache_servers.%d.", v)
-		c.Gauge(sPath+"active", int64(data.Upstreams.CacheServers[v].Active))
-		c.Gauge(sPath+"requests", int64(data.Upstreams.CacheServers[v].Requests))
-		c.Gauge(sPath+"fails", int64(data.Upstreams.CacheServers[v].Fails))
-		c.Gauge(sPath+"unavail", int64(data.Upstreams.CacheServers[v].Unavail))
-		c.Gauge(sPath+"sent", int64(data.Upstreams.CacheServers[v].Sent))
-		c.Gauge(sPath+"received", int64(data.Upstreams.CacheServers[v].Sent))
+		_ = c.Gauge(sPath+"active", int64(data.Upstreams.CacheServers.Peers[v].Active))
+		_ = c.Gauge(sPath+"requests", int64(data.Upstreams.CacheServers.Peers[v].Requests))
+		_ = c.Gauge(sPath+"fails", int64(data.Upstreams.CacheServers.Peers[v].Fails))
+		_ = c.Gauge(sPath+"unavail", int64(data.Upstreams.CacheServers.Peers[v].Unavail))
+		_ = c.Gauge(sPath+"sent", int64(data.Upstreams.CacheServers.Peers[v].Sent))
+		_ = c.Gauge(sPath+"received", int64(data.Upstreams.CacheServers.Peers[v].Sent))
 
-		c.Gauge(sPath+"responses.1xx", int64(data.Upstreams.CacheServers[v].Responses.OneH))
-		c.Gauge(sPath+"responses.2xx", int64(data.Upstreams.CacheServers[v].Responses.TwoH))
-		c.Gauge(sPath+"responses.3xx", int64(data.Upstreams.CacheServers[v].Responses.ThreeH))
-		c.Gauge(sPath+"responses.4xx", int64(data.Upstreams.CacheServers[v].Responses.FourH))
-		c.Gauge(sPath+"responses.5xx", int64(data.Upstreams.CacheServers[v].Responses.FiveH))
-		c.Gauge(sPath+"responses.total", int64(data.Upstreams.CacheServers[v].Responses.Total))
+		_ = c.Gauge(sPath+"responses.1xx", int64(data.Upstreams.CacheServers.Peers[v].Responses.OneXx))
+		_ = c.Gauge(sPath+"responses.2xx", int64(data.Upstreams.CacheServers.Peers[v].Responses.TwoXx))
+		_ = c.Gauge(sPath+"responses.3xx", int64(data.Upstreams.CacheServers.Peers[v].Responses.ThreeXx))
+		_ = c.Gauge(sPath+"responses.4xx", int64(data.Upstreams.CacheServers.Peers[v].Responses.FourXx))
+		_ = c.Gauge(sPath+"responses.5xx", int64(data.Upstreams.CacheServers.Peers[v].Responses.FiveXx))
+		_ = c.Gauge(sPath+"responses.total", int64(data.Upstreams.CacheServers.Peers[v].Responses.Total))
 
-		c.Gauge(sPath+"health_checks.fails", int64(data.Upstreams.CacheServers[v].HealthChecks.Fails))
-		c.Gauge(sPath+"health_checks.unhealthy", int64(data.Upstreams.CacheServers[v].HealthChecks.Unhealthy))
+		_ = c.Gauge(sPath+"health_checks.fails", int64(data.Upstreams.CacheServers.Peers[v].HealthChecks.Fails))
+		_ = c.Gauge(sPath+"health_checks.unhealthy", int64(data.Upstreams.CacheServers.Peers[v].HealthChecks.Unhealthy))
 	}
 }
